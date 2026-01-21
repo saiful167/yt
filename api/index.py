@@ -6,65 +6,73 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# আপনার দেওয়া কুকিগুলো প্রসেস করার ফাংশন
-def get_cookies():
-    # এখানে আপনার দেওয়া প্রধান সেশন কুকিগুলো সাজানো হয়েছে
-    return {
-        "VISITOR_PRIVACY_METADATA": "CgJCRBIEGgAgMg%3D%3D",
-        "__Secure-3PSID": "g.a0005wizLu87rqnmnHWeGPFWuyRbMpp_NvFvpuiKaBVyCncm6UZJDEE5NAyKk5wWAbZS64MPQAACgYKAZoSARUSFQHGX2Mi7QFkle3FWCJKymO0UReAERoVAUF8yKoNeS6TcR-zlwnscNrtrknr0076",
-        "GPS": "1",
-        "__Secure-1PSIDTS": "sidts-CjUB7I_69AiGFlWCIF_xdNig6LGS04ZMHN9Jr6FDWWWzyeuV8XwhgUga-3xkNqqab4Y5Jt538xAA",
-        "__Secure-3PAPISID": "eoIxgQ98jlpKnGS4/AlzrXyA2NmkLW4sk0",
-        "__Secure-3PSIDCC": "AKEyXzWyB6mNnqjdBctx27egrimEfRxFupKmIia84W6A_XT0nKA9LtxDa0q8hG-uFdK7QEiA",
-        "__Secure-3PSIDTS": "sidts-CjUB7I_69AiGFlWCIF_xdNig6LGS04ZMHN9Jr6FDWWWzyeuV8XwhgUga-3xkNqqab4Y5Jt538xAA",
-        "PREF": "tz=America.Tegucigalpa",
-        "VISITOR_INFO1_LIVE": "jSlN01zseJs"
-    }
-
 @app.route('/')
 def home():
-    return jsonify({"developer": "Saiful Islam", "status": "Online"})
+    return jsonify({
+        "status": "Online",
+        "developer": "Saiful Islam",
+        "message": "YouTube Multi-Quality Downloader API with Cookie Auth"
+    })
 
-@app.route('/api/video')
-def get_video():
+@app.route('/api/video', methods=['GET'])
+def get_video_data():
     video_url = request.args.get('url')
     if not video_url:
-        return jsonify({"error": "No URL provided", "developer": "Saiful Islam"}), 400
+        return jsonify({
+            "success": False, 
+            "developer": "Saiful Islam", 
+            "error": "URL is required"
+        }), 400
 
     try:
-        # yt-dlp অপশন সেটআপ
+        # Vercel-এ কুকি ফাইলের সঠিক পাথ নির্ধারণ
+        # এটি মেইন ফোল্ডারে থাকা cookies.txt ফাইলটিকে খুঁজে বের করবে
+        cookie_path = os.path.join(os.path.dirname(__file__), '..', 'cookies.txt')
+
         ydl_opts = {
             'quiet': True,
             'no_warnings': True,
             'nocheckcertificate': True,
-            # সরাসরি কুকি ডাটা পাস করা
-            'http_headers': {
-                'Cookie': "; ".join([f"{k}={v}" for k, v in get_cookies().items()]),
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+            'cookiefile': cookie_path, # কুকি ফাইল ব্যবহার
+            'format': 'best',
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # ভিডিওর তথ্য সংগ্রহ করা
             info = ydl.extract_info(video_url, download=False)
             
+            # ডাটা ফিল্টারিং করে ফরম্যাটগুলো সাজানো
             formats = []
             for f in info.get('formats', []):
-                if f.get('vcodec') != 'none' and f.get('url'):
+                # শুধুমাত্র যেগুলোর ডাউনলোড লিঙ্ক (url) আছে সেগুলো নেওয়া
+                if f.get('url'):
                     formats.append({
                         "quality": f.get('format_note') or f.get('height'),
-                        "ext": f.get('ext'),
-                        "url": f.get('url')
+                        "extension": f.get('ext'),
+                        "size": f.get('filesize') or f.get('filesize_approx'),
+                        "download_url": f.get('url')
                     })
 
-            return jsonify({
+            # ফাইনাল রেসপন্স ডাটা
+            response_data = {
                 "success": True,
                 "developer": "Saiful Islam",
                 "title": info.get('title'),
                 "thumbnail": info.get('thumbnail'),
-                "direct_links": formats[:8] # সেরা ৮টি ফরম্যাট
-            })
+                "duration": info.get('duration'),
+                "uploader": info.get('uploader'),
+                "direct_links": formats[:10] # সেরা ১০টি ডাউনলোড লিঙ্ক
+            }
+            
+            return jsonify(response_data), 200
 
     except Exception as e:
-        return jsonify({"success": False, "error": str(e), "developer": "Saiful Islam"}), 500
+        return jsonify({
+            "success": False, 
+            "developer": "Saiful Islam", 
+            "error": str(e)
+        }), 500
 
+# Vercel-এর জন্য app অবজেক্ট এক্সপোজ করা
 app = app
